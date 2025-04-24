@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CSV eBay Profit Analyzer</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  {% verbatim %}
+  <style>
+    [v-cloak] {
+      display: none;
+    }
+    body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+
+  [v-cloak] {
+    display: none;
+  }
+
+  .card {
+    border-radius: 1rem;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  }
+
+  .form-label {
+    font-weight: 600;
+  }
+
+  .form-control,
+  .form-select {
+    border-radius: 0.5rem;
+    transition: box-shadow 0.3s ease;
+  }
+
+  .form-control:focus,
+  .form-select:focus {
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+  }
+
+  .btn {
+    border-radius: 0.5rem;
+    font-weight: 600;
+  }
+
+  .btn-primary {
+    background-color: #019699;
+    border-color: #019699;
+  }
+  .btn-primary:hover {
+    background-color: #028083;
+    border-color: #019699;
+  }
+
+  .btn-warning {
+    background-color: #ed9b02;
+    border-color: #f59f00;
+    color: #fff;
+  }
+  .btn-warning:hover {
+    background-color: #d88d03;
+    border-color: #f59f00;
+    color: #fff;
+  }
+
+  h1, h5 {
+    font-weight: 700;
+  }
+
+  table thead th {
+    vertical-align: middle;
+    background-color: #343a40;
+    color: white;
+    font-weight: 600;
+  }
+
+  tbody tr:hover {
+    background-color: #f1f1f1;
+  }
+
+  .table th, .table td {
+    vertical-align: middle;
+    font-size: 0.95rem;
+  }
+
+  .spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .btn-group a {
+    margin: 0 5px;
+  }
+  </style>
+</head>
+<body>
+  <div id="app" class="container mt-5" v-cloak>
+    <h1 class="text-center mb-4">eBay Profit Analyzer</h1>
+
+    <!-- Upload Form -->
+    <div class="card mb-4 w-50 m-auto">
+      <div class="card-body">
+        <form @submit.prevent="uploadFile">
+          <div class="mb-3">
+            <label for="file" class="form-label">Upload Your CSV File:</label>
+            <input type="file" class="form-control" id="file" @change="handleFileChange" accept=".csv" required>
+            <div class="form-text">
+              CSV should contain SKU, UPC, product title, and cost information.
+            </div>
+          </div>
+          <button type="submit" class="w-100 btn btn-primary" :disabled="uploading">
+            <span class="spinner-border spinner-border-sm" role="status" v-if="uploading"></span>
+            Upload File
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Column Mapping Section -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="mb-3">Map Your Columns</h5>
+      </div>
+      <div class="card-body">
+        <form>
+          <div class="row g-3">
+            <div class="col mb-3" v-for="(field, key) in mapping" :key="key">
+              <label :for="key" class="form-label">{{ field.label }}</label>
+              <select class="form-select" v-model="mapping[key].value" v-if="key !== 'dis_col'" required>
+                <option disabled value="">-- select column --</option>
+                <option v-for="col in columns" :value="col">{{ col }}</option>
+              </select>
+              <input type="text" placeholder="Discount Price %" class="form-control" v-model="mapping[key].value" v-else required>
+            </div>
+          </div>
+        
+          <div class="d-grid">
+            <div class="row text-center">
+              <div class="col">
+                <button
+                  type="button"
+                  class="btn btn-primary me-2"
+                  @click.prevent="analyzeColumns('ebay')"
+                  :disabled="analyzing"
+                >
+                  Analyze with eBay Data
+                </button>
+                <br>
+                <div class="text-center">
+                  <span class="spinner-border spinner-border-sm ms-2" role="status" v-if="analyzing"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+        
+      </div>
+    </div>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Ebay</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="(name, key) in results" :key="key">
+          <td>
+            <p>{{ name }}</p>
+          </td>
+          <td>
+            <a :href="'/analyze?name=' + encodeURIComponent(name) + '&platform=Ebay'" class="btn btn-primary btn-sm">Ebay</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    
+    
+    
+
+  </div>
+  {% endverbatim %}
+
+  <script>
+    const { createApp } = Vue;
+    
+    createApp({
+      data() {
+        return {
+          file: null,
+          columns: [],
+          results: [],
+          filteredResults: [],
+          uploading: false,
+          analyzing: false,
+          filters: {
+            Cost: '',
+            ActualPrice: '',
+            avg_sold_price: '',
+            estimated_fees: '',
+            estimated_profit: '',
+            profit_margin: '',
+            monthly_volume: ''
+          },
+          mapping: {
+            sku_col: { label: 'SKU Column', value: 'sku' },
+            upc_col: { label: 'UPC/Barcode Column', value: 'upc' },
+            cost_col: { label: 'Cost Column', value: 'cost' },
+            dis_col: { label: 'Discount Column', value: '0' },
+            title_col: { label: 'Product Title Column', value: 'title' },
+          }
+        };
+      },
+      methods: {
+        handleFileChange(e) {
+          this.file = e.target.files[0];
+        },
+        async uploadFile() {
+          if (!this.file) return;
+    
+          this.uploading = true;
+          const formData = new FormData();
+          formData.append('file', this.file);
+    
+          try {
+            const response = await axios.post('', formData, {
+              headers: { 'X-CSRFToken': this.getCSRFToken() }
+            });
+            this.columns = response.data.columns || [];
+          } catch (err) {
+            alert('Error uploading file');
+            console.error(err);
+          } finally {
+            this.uploading = false;
+          }
+        },
+        async analyzeColumns(platform) {
+          this.analyzing = true;
+          const formData = new FormData();
+          formData.append('map_action', 'map_columns');
+          for (let key in this.mapping) {
+            formData.append(key, this.mapping[key].value);
+          }
+    
+          // 👇 Append platform from button click
+          formData.append('platform', platform);
+    
+          try {
+            const response = await axios.post('', formData, {
+              headers: { 'X-CSRFToken': this.getCSRFToken() }
+            });
+            this.results = response.data.results || [];
+            console.log("result", this.results);
+            this.filteredResults = this.results;
+          } catch (err) {
+            alert('Error analyzing file');
+            console.error(err);
+          } finally {
+            this.analyzing = false;
+          }
+        },
+        getCSRFToken() {
+          const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+          return cookie ? cookie.split('=')[1] : '';
+        },
+        async getData() {
+          try {
+            const response = await axios.get('?id=home', null, {
+              headers: { 'X-CSRFToken': this.getCSRFToken() }
+            });
+            this.results = response.data.results || [];
+          } catch (err) {
+            console.error("Failed to load data:", err);
+          }
+        }
+      },
+      mounted() {
+        this.filteredResults = this.results;
+        this.getData();
+      }
+    }).mount('#app');
+    </script>
+    
+    
+
+
+</body>
+<style>
+  .table-striped tbody tr:nth-of-type(odd) {
+    background-color: #f8f9fa;
+  }
+</style>
+</html>

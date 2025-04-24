@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSV eBay Profit Analyzer</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  {% verbatim %}
+  <style>
+    :root {
+      --bg-color: #ffffff;
+      --card-bg: #f4f3f3;
+      --primary-color: #008082;
+      --accent-color: #019699;
+      --text-light: #e0e0e0;
+      --success-bg: rgba(0, 255, 128, 0.15);
+      --warning-bg: rgba(255, 204, 0, 0.15);
+      --danger-bg: rgba(255, 0, 0, 0.15);
+    }
+
+    body {
+      background-color: #f8f9fa;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    [v-cloak] {
+      display: none;
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border-radius: 10px;
+      padding:5px;
+      box-shadow: 0 4px 12px rgba(105, 104, 104, 0.3);
+    }
+
+    .table thead {
+      background-color: var(--accent-color);
+      color: #fff;
+    }
+
+    .table th span {
+      cursor: pointer;
+      display: inline-block;
+    }
+
+    .table th span:hover {
+      text-decoration: underline;
+    }
+
+    .form-control-sm {
+      font-size: 0.75rem;
+    }
+
+    .table-success {
+      background-color: var(--success-bg) !important;
+    }
+
+    .table-warning {
+      background-color: var(--warning-bg) !important;
+    }
+
+    .table-danger {
+      background-color: var(--danger-bg) !important;
+    }
+
+    .btn-primary {
+      background-color: var(--accent-color);
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--primary-color);
+    }
+
+    .btn-secondary {
+      background-color: #343a40;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background-color: #495057;
+    }
+
+    .form-control:focus {
+        outline: none;
+        box-shadow: none;
+    }
+
+    .data-cont{
+        height:550px;
+        max-width:100%; /* Change from 1700px to 100% for wider table */
+        margin: auto;
+    }
+    
+    .table-responsive {
+        max-height: 100%;
+        overflow-y: auto;
+        width: 100%; /* Ensure table takes full width */
+    }
+
+    .table {
+        width: 100%; /* Ensure table takes full width */
+        min-width: 1600px; /* Set minimum width for better horizontal scrolling */
+    }
+
+    .table thead th {
+        position: sticky;
+        top: 0;
+        background-color: var(--accent-color);
+        z-index: 2;
+        font-size: 15px;
+        color: white;
+    }
+    
+    .table thead th {
+        box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+    }
+    
+    tbody tr:hover {
+      background-color: #f1f1f1;
+    }
+
+    .table th, .table td {
+      vertical-align: middle;
+      font-size: 0.95rem;
+    }
+
+    .spinner-border-sm {
+      width: 1rem;
+      height: 1rem;
+    }
+
+    .btn-group a {
+      margin: 0 5px;
+    }
+    
+    .table-striped tbody tr:nth-of-type(odd) {
+      background-color: #f8f9fa;
+    }
+    
+    .sort-icon {
+      margin-left: 5px;
+    }
+
+    /* New filter input styles */
+    .filter-input-group {
+      display: flex;
+      margin-top: 4px;
+    }
+
+    .filter-operator {
+      background-color: #e9ecef;
+      border: 1px solid #ced4da;
+      border-right: none;
+      border-top-left-radius: 3px;
+      border-bottom-left-radius: 3px;
+      padding: 0 8px;
+      color: #495057;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+    }
+
+    .filter-value {
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+      flex-grow: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="container-fluid py-5" v-cloak>  <!-- Changed from container to container-fluid for more width-->
+    <p class="text-center text-dark fs-3 fw-bold">{{ platform }} Profit Analyzer</p>
+    <div class="text-danger text-center fw-bold mb-4">
+      <p>{{ error }}</p>
+    </div>
+
+    <div class="card data-cont" v-show="results.length">
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>UPC</th>
+              <th>Title</th>
+              <th>
+                <span @click="sortByColumn('Cost')">
+                  Cost
+                  <span v-if="sortKey === 'Cost'" class="sort-icon">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                </span>
+                <div class="filter-input-group">
+                  <select v-model="filterOperators.Cost" class="filter-operator">
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input v-model="filterValues.Cost" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
+                </div>
+              </th>
+              <th>
+                <span @click="sortByColumn('ActualPrice')">
+                  Actual Price
+                  <span v-if="sortKey === 'ActualPrice'" class="sort-icon">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                </span>
+                <div class="filter-input-group">
+                  <select v-model="filterOperators.ActualPrice" class="filter-operator">
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input v-model="filterValues.ActualPrice" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
+                </div>
+              </th>
+              <th>
+                <span @click="sortByColumn('avg_sold_price')">
+                  Avg Sold
+                  <span v-if="sortKey === 'avg_sold_price'" class="sort-icon">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                </span>
+                <div class="filter-input-group">
+                  <select v-model="filterOperators.avg_sold_price" class="filter-operator">
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input v-model="filterValues.avg_sold_price" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
+                </div>
+              </th>
+              <th>
+                <span @click="sortByColumn('estimated_fees')">
+                  Fees
+                  <span v-if="sortKey === 'estimated_fees'" class="sort-icon">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                </span>
+                <div class="filter-input-group">
+                  <select v-model="filterOperators.estimated_fees" class="filter-operator">
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input v-model="filterValues.estimated_fees" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
+                </div>
+              </th>
+              <th>
+                <span @click="sortByColumn('estimated_shipping')">
+                  Shipping
+                  <span v-if="sortKey === 'estimated_shipping'" class="sort-icon">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                </span>
+                <div class="filter-input-group">
+                  <select v-model="filterOperators.estimated_shipping" class="filter-operator">
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input v-model="filterValues.estimated_shipping" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
+                </div>
+              </th>
+              <th>
+                <span @click="sortByColumn('estimated_profit')">
+                  Profit
+                  <span v-if="sortKey === 'estimated_profit'" class="sort-icon">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                </span>
+                <div class="filter-input-group">
+                  <select v-model="filterOperators.estimated_profit" class="filter-operator">
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input v-model="filterValues.estimated_profit" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
+                </div>
+              </th>
+              <th>
+                <span @click="sortByColumn('profit_margin')">
+                  Margin %
+                  <span v-if="sortKey === 'profit_margin'" class="sort-icon">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                </span>
+                <div class="filter-input-group">
+                  <select v-model="filterOperators.profit_margin" class="filter-operator">
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input v-model="filterValues.profit_margin" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
+                </div>
+              </th>
+              <th>
+                <span @click="sortByColumn('roi')">
+                  ROI %
+                  <span v-if="sortKey === 'roi'" class="sort-icon">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                </span>
+                <div class="filter-input-group">
+                  <select v-model="filterOperators.roi" class="filter-operator">
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input v-model="filterValues.roi" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
+                </div>
+              </th>
+              <th>
+                <span @click="sortByColumn('monthly_volume')">
+                  Monthly Sales
+                  <span v-if="sortKey === 'monthly_volume'" class="sort-icon">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                </span>
+                <div class="filter-input-group">
+                  <select v-model="filterOperators.monthly_volume" class="filter-operator">
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input v-model="filterValues.monthly_volume" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
+                </div>
+              </th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, index) in paginatedResults" :key="index"
+                :class="{
+                  'table-danger': row.estimated_profit < 0,
+                  'table-success': row.profit_margin > 30,
+                  'table-warning': row.profit_margin <= 30 && row.estimated_profit >= 0
+                }">
+              <td>{{ row.SKU }}</td>
+              <td>{{ row.UPC }}</td>
+              <td>{{ row.Title.length > 40 ? row.Title.slice(0, 40) + '…' : row.Title }}</td>
+              <td>${{ row.Cost.toFixed(2) }}</td>
+              <td>${{ row.ActualPrice.toFixed(2) }}</td>
+              <td>${{ row.avg_sold_price.toFixed(2) }}</td>
+              <td>${{ row.estimated_fees.toFixed(2) }}</td>
+              <td>${{ row.estimated_shipping.toFixed(2) }}</td>
+              <td>${{ row.estimated_profit.toFixed(2) }}</td>
+              <td>{{ row.profit_margin.toFixed(2) }}%</td>
+              <td>{{ row.roi.toFixed(2) }}%</td>
+              <td>{{ row.monthly_volume }}</td>
+              <td><a :href="row.ebay_link" class="btn btn-sm btn-outline-dark" target="_blank">eBay</a></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="text-center mt-3">
+            <button class="btn btn-outline-secondary btn-sm" @click="showMoreRows" v-if="visibleRows < filteredResults.length">
+               Show More ({{ filteredResults.length - visibleRows }} remaining)
+            </button>
+            <button class="btn btn-outline-danger btn-sm" @click="resetRows" v-if="visibleRows > 50">
+               Reset Rows
+            </button>
+        </div>
+      </div>
+    </div>
+    <div class="d-flex justify-content-center gap-3 mt-4">
+        <button class="btn btn-primary" @click.prevent="downloadResultsCSV" v-if="results.length">Download Results CSV</button>
+        <a href="/" class="text-white text-decoration-none btn btn-dark">Go back</a>
+      </div>
+  </div>
+  {% endverbatim %}
+
+  <script>
+    const { createApp } = Vue;
+
+    createApp({
+      data() {
+        return {
+          file: null,
+          columns: [],
+          results: [],
+          originalResults: [],
+          filteredResults: [],
+          uploading: false,
+          analyzing: false,
+          renderLimit: 100,
+          visibleRows: 50,
+          platform: "",
+          error: '',
+          sortKey: '',
+          sortOrder: '',
+          filterTimeout: null,
+          filterOperators: {
+            Cost: '>',
+            ActualPrice: '>',
+            avg_sold_price: '>',
+            estimated_fees: '<',
+            estimated_shipping: '<',
+            estimated_profit: '>',
+            profit_margin: '>',
+            roi:'',
+            monthly_volume: '>'
+          },
+          filterValues: {
+            Cost: '',
+            ActualPrice: '',
+            avg_sold_price: '',
+            estimated_fees: '',
+            estimated_shipping: '',
+            estimated_profit: '',
+            profit_margin: '',
+            roi:'',
+            monthly_volume: ''
+          },
+          mapping: {
+            sku_col: { label: 'SKU Column', value: '' },
+            upc_col: { label: 'UPC/Barcode Column', value: '' },
+            cost_col: { label: 'Cost Column', value: '' },
+            dis_col: { label: 'Discount Column', value: '' },
+            title_col: { label: 'Product Title Column', value: '' },
+          }
+        };
+      },
+      computed: {
+        paginatedResults() {
+          return this.filteredResults.slice(0, this.visibleRows);
+        },
+      },
+      methods: {
+        showMoreRows() {
+          this.visibleRows += 50;
+        },
+        resetRows() {
+          this.visibleRows = 50;
+        },
+        getCSRFToken() {
+          const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+          return cookie ? cookie.split('=')[1] : '';
+        },
+        debounceApplyFilters() {
+          clearTimeout(this.filterTimeout);
+          this.filterTimeout = setTimeout(() => {
+            this.applyFilters();
+          }, 300);
+        },
+        applyFilters() {
+          this.filteredResults = this.originalResults.filter(row => {
+            return Object.keys(this.filterValues).every(key => {
+              if (!this.filterValues[key]) return true;
+              
+              const value = parseFloat(this.filterValues[key]);
+              const actual = row[key];
+              const operator = this.filterOperators[key];
+              
+              if (isNaN(value)) return true;
+              
+              switch (operator) {
+                case '>': return actual > value;
+                case '<': return actual < value;
+                case '=': return actual === value;
+                case '>=': return actual >= value;
+                case '<=': return actual <= value;
+                default: return true;
+              }
+            });
+          });
+          
+          // re-apply sort if exists
+          if (this.sortKey) {
+            this.sortByColumn(this.sortKey, true);
+          }
+        },
+        sortByColumn(key, skipToggle = false) {
+          if (!skipToggle) {
+            if (this.sortKey === key) {
+              this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
+            } else {
+              this.sortKey = key;
+              this.sortOrder = 'asc';
+            }
+          }
+          
+          const modifier = this.sortOrder === 'desc' ? -1 : 1;
+          
+          // Create a new array to avoid mutation issues
+          this.filteredResults = [...this.filteredResults].sort((a, b) => {
+            if (typeof a[key] === 'number') {
+              return (a[key] - b[key]) * modifier;
+            } else {
+              return String(a[key]).localeCompare(String(b[key])) * modifier;
+            }
+          });
+        },
+        downloadResultsCSV() {
+          if (!this.filteredResults.length) {
+            alert('No results to download');
+            return;
+          }
+          
+          // Get headers from the first object
+          const headers = Object.keys(this.filteredResults[0]);
+          
+          // Create CSV content
+          let csvContent = headers.join(',') + '\n';
+          
+          // Add data rows
+          this.filteredResults.forEach(row => {
+            const values = headers.map(header => {
+              let cellValue = row[header];
+              
+              // Format numbers to 2 decimal places if they're numeric
+              if (typeof cellValue === 'number' && !Number.isInteger(cellValue)) {
+                cellValue = cellValue.toFixed(2);
+              }
+              
+              // Handle strings with commas by wrapping in quotes
+              if (typeof cellValue === 'string' && cellValue.includes(',')) {
+                return `"${cellValue}"`;
+              }
+              
+              return cellValue;
+            });
+            
+            csvContent += values.join(',') + '\n';
+          });
+          
+          // Create a blob with the CSV content
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          
+          // Create download link and trigger download
+          const link = document.createElement('a');
+          link.setAttribute('href', url);
+          link.setAttribute('download', `${this.platform || 'ebay'}_analysis.csv`);
+          link.style.visibility = 'hidden';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        },
+        async getData() {
+          const urlParams = new URLSearchParams(window.location.search);
+          this.platform = urlParams.get('platform') || 'eBay';
+          try {
+            const response = await axios.post(`analyze?${urlParams}`, null, {
+              headers: { 'X-CSRFToken': this.getCSRFToken() }
+            });
+            
+            if (response.data && Array.isArray(response.data.results)) {
+              this.results = response.data.results;
+              this.results.forEach(item => {
+                ['Cost', 'ActualPrice', 'avg_sold_price', 'estimated_fees', 'estimated_shipping', 
+                'estimated_profit','profit_margin','roi','monthly_volume'].forEach(field => {
+                  if (item[field] !== undefined) {
+                    item[field] = parseFloat(item[field]);
+                  }
+                });
+              });
+              
+              this.originalResults = JSON.parse(JSON.stringify(this.results));
+              this.filteredResults = JSON.parse(JSON.stringify(this.results));
+            } else {
+              this.error = 'Invalid data format returned from server';
+            }
+          } catch (err) {
+            this.error = 'There is no Data for this platform';
+            console.error("Failed to load data:", err);
+          }
+        }
+      },
+      mounted() {
+        this.getData();
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
