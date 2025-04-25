@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render
 from .models import RawCsv,Key
+from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -80,22 +81,36 @@ def get_ebay_avg_price(search_term, cost):
 
 
 def hash_item(item):
-    concat = f"{item['SKU']}-{item['UPC']}-{item['Title']}-{item['Cost']}-{item.get('ActualPrice', '')}"
+    concat = f"{item.get('SKU', '')}-{item.get('UPC', '')}-{item.get('Title', '')}-{item.get('Cost', '')}-{item.get('ActualPrice', '')}-" \
+             f"{item.get('optional_1', '')}-{item.get('optional_2', '')}-{item.get('optional_3', '')}"
     return hashlib.md5(concat.encode()).hexdigest()
 
 
-def process_item(item_data, platform="ebay"):
+
+def process_item(item_data, platform="ebay",col_names=None):
     try:
         sku = item_data.get('SKU', '')
-        upc = str(item_data.get('UPC', ''))
-        title = str(item_data.get('Title', ''))
+        upc = str(item_data.get('UPC', '')).strip()
+        title = str(item_data.get('Title', '')).strip()
         cost = float(item_data.get('Cost', 0) or 0.0)
-        actual_price = float(item_data.get('ActualPrice', 0) or cost)
-        search_term = upc if upc and upc.lower() not in ('nan', 'none') else title
+        actual_price = float(item_data.get('ActualPrice', cost) or cost)
+
+        # Optional fields from CSV
+        optional_name_1 = col_names.get("optional_name_1", "") if col_names else ""
+        optional_name_2 = col_names.get("optional_name_2", "") if col_names else ""
+        optional_name_3 = col_names.get("optional_name_3", "") if col_names else ""
+
+        optional_1 = item_data.get(optional_name_1, '')
+        optional_2 = item_data.get(optional_name_2, '')
+        optional_3 = item_data.get(optional_name_3, '')
+
+        # Determine search term
+        search_term = upc if upc and upc.lower() not in ('nan', 'none', '') else title
+
+        avg_price = avg_shipping = roi = volume = product_link = 0.0
 
         if platform == "walmart":
-            avg_price, avg_shipping, volume, product_link = get_walmart_avg_price(search_term)
-            roi = 0.0  # Optionally, implement ROI in `get_walmart_avg_price` too
+            pass
         else:
             avg_price, avg_shipping, roi, volume, product_link = get_ebay_avg_price(search_term, cost)
 
@@ -103,13 +118,19 @@ def process_item(item_data, platform="ebay"):
         platform_link_key = 'ebay_link' if platform == "ebay" else 'walmart_link'
 
         estimated_fee = avg_price * platform_fee_percentage
-        estimated_shipping = avg_shipping or DEFAULT_SHIPPING_COST
+        estimated_shipping = avg_shipping if avg_shipping else DEFAULT_SHIPPING_COST
         profit = avg_price - actual_price - estimated_fee - estimated_shipping
         margin = (profit / avg_price * 100) if avg_price > 0 else 0
 
         return {
-            'SKU': sku, 'UPC': upc, 'Title': title,
-            'Cost': cost, 'ActualPrice': actual_price,
+            'SKU': sku,
+            'UPC': upc,
+            'Title': title,
+            'Cost': round(cost, 2),
+            'ActualPrice': round(actual_price, 2),
+            'optional_1': optional_1,
+            'optional_2': optional_2,
+            'optional_3': optional_3,
             'avg_sold_price': round(avg_price, 2),
             'estimated_fees': round(estimated_fee, 2),
             'estimated_shipping': round(estimated_shipping, 2),
@@ -117,17 +138,23 @@ def process_item(item_data, platform="ebay"):
             'profit_margin': round(margin, 2),
             'roi': round(roi, 2),
             'monthly_volume': volume,
-            platform_link_key: product_link
+            platform_link_key: product_link,
+            'optional_1_name':optional_name_1,
+            'optional_2_name':optional_name_2,
+            'optional_3_name':optional_name_3,
         }
 
     except Exception as e:
-        logger.error(f"Error processing item: {str(e)}")
+        logger.error(f"Error processing item: {traceback.format_exc()}")
         return {
             'SKU': item_data.get('SKU', ''),
             'UPC': item_data.get('UPC', ''),
             'Title': item_data.get('Title', ''),
             'Cost': item_data.get('Cost', 0),
             'ActualPrice': item_data.get('ActualPrice', 0),
+            'optional_1': item_data.get('optional_1', ''),
+            'optional_2': item_data.get('optional_2', ''),
+            'optional_3': item_data.get('optional_3', ''),
             'error': str(e),
             'avg_sold_price': 0,
             'estimated_fees': 0,
@@ -135,87 +162,72 @@ def process_item(item_data, platform="ebay"):
             'estimated_profit': 0,
             'profit_margin': 0,
             'roi': 0,
-            'monthly_volume': volume,
-            'ebay_link' if platform == "ebay" else 'walmart_link': '#'
+            'monthly_volume': 0,
+            'ebay_link' if platform == "ebay" else 'walmart_link': '#',
+            'optional_1_name':optional_name_1,
+            'optional_2_name':optional_name_2,
+            'optional_3_name':optional_name_3,
         }
 
-
+@csrf_exempt
 def analyze(request):
     if request.method == "GET" and request.GET.get("id"):
-        csv_list = list(RawCsv.objects.order_by('created_at').values_list('name', flat=True))
+        csv_list = list(RawCsv.objects.order_by('-created_at').values_list('name', flat=True))
         return JsonResponse({"results": csv_list})
+    
+    if request.method == "GET" and request.GET.get("delete"):
 
+        name = request.GET.get("delete")
+        instance = RawCsv.objects.filter(name=name)
+        if len(instance):
+            instance[0].delete()
+
+        csv_list = list(RawCsv.objects.order_by('-created_at').values_list('name', flat=True))
+        return JsonResponse({"results": csv_list})
+    
     if request.method == 'GET' and not request.GET.get('download'):
         return render(request, 'home.html')
-
-    if request.method == 'GET' and request.GET.get('download') == 'csv':
-        try:
-            results = request.session.get('analysis_results')
-            if not results:
-                return HttpResponse("No analysis results found.", content_type="text/plain")
-
-            response = HttpResponse(content_type='text/csv')
-            response['Content-Disposition'] = 'attachment; filename="ebay_analysis.csv"'
-            writer = csv.DictWriter(response, fieldnames=results[0].keys())
-            writer.writeheader()
-            writer.writerows(results)
-            return response
-        except Exception as e:
-            return HttpResponse(f"Error generating CSV: {str(e)}", content_type="text/plain")
-
+    
     if request.method == 'POST' and request.FILES.get('file'):
         try:
             file = request.FILES['file']
-            
-            # Read the file content
+
             try:
                 content = file.read().decode('utf-8')
             except UnicodeDecodeError:
                 file.seek(0)
                 content = file.read().decode('latin-1')
-            
-            # Find the actual header row by looking for specific column names
-            header_indicators = ['Style', 'Style #', 'Color', 'Size', 'UPC', 'SKU']
+
             lines = content.splitlines()
             header_row = None
-            
             for i, line in enumerate(lines):
-                if all(indicator in line for indicator in header_indicators):
+                if 'UPC' in line:
                     header_row = i
                     break
-            
+
             if header_row is None:
-                return JsonResponse({'error': "Could not identify header row in CSV", 'success': False}, status=400)
-            
-            # Read CSV starting from the identified header row
+                return JsonResponse({'error': "Could not identify header row (UPC missing)", 'success': False}, status=400)
+
             df = pd.read_csv(io.StringIO('\n'.join(lines[header_row:])))
-            
-            # Clean data: Remove rows with all NaN values and strip whitespace
             df = df.dropna(how='all')
-            
-            # Clean string columns - remove $ signs, commas, and convert to proper types
+
             for col in df.columns:
                 if df[col].dtype == 'object':
-                    # Replace $ and commas in price columns
                     if any(price_indicator in col.lower() for price_indicator in ['retail', 'w/s', 'cost', 'cog']):
                         df[col] = df[col].astype(str).str.replace('$', '').str.replace(',', '').str.strip()
-                        # Convert to float if possible
                         try:
                             df[col] = pd.to_numeric(df[col], errors='coerce')
                         except:
                             pass
                     else:
-                        # Just clean other string columns
                         df[col] = df[col].astype(str).str.strip()
-                        
-            # Convert column names to lowercase and strip whitespace
+
             df.columns = df.columns.str.strip().str.lower()
-            
-            # Store in session
+
             request.session['raw_csv'] = df.to_json(orient='split')
             request.session['file_name'] = file.name
             request.session['cached_results'] = {}
-            
+
             return JsonResponse({'columns': list(df.columns), 'success': True})
         except Exception as e:
             logger.error(f"File upload error: {traceback.format_exc()}")
@@ -223,27 +235,63 @@ def analyze(request):
 
     if request.method == 'POST' and request.POST.get('map_action') == 'map_columns':
         try:
-            sku_col = request.POST.get('sku_col', '').lower().strip()
-            upc_col = request.POST.get('upc_col', '').lower().strip()
-            cost_col = request.POST.get('cost_col', '').lower().strip()
-            title_col = request.POST.get('title_col', '').lower().strip()
-            discount_percentage = float(request.POST.get('dis_col', 0) or 0)
+            # Collect selected columns from mapping
+            selected_fields = {
+                'sku_col': request.POST.get('sku_col', '').lower().strip(),
+                'upc_col': request.POST.get('upc_col', '').lower().strip(),
+                'cost_col': request.POST.get('cost_col', '').lower().strip(),
+                'title_col': request.POST.get('title_col', '').lower().strip(),
+                'dis_col': request.POST.get('dis_col', '').strip(),  # discount %
+                'optional_1': request.POST.get('optional_1', '').lower().strip(),
+                'optional_2': request.POST.get('optional_2', '').lower().strip(),
+                'optional_3': request.POST.get('optional_3', '').lower().strip(),
+            }
             platform = request.POST.get("platform", "ebay").lower().strip()
+            discount_percentage = float(selected_fields.get('dis_col') or 0)
 
             raw_data = request.session.get('raw_csv')
             if not raw_data:
                 return JsonResponse({'error': "Session expired. Please upload your file again.", 'success': False}, status=400)
 
             df = pd.read_json(raw_data, orient='split')
-            df['SKU'] = df[sku_col]
-            df['UPC'] = df[upc_col]
-            df['Title'] = df[title_col]
-            df['Cost'] = pd.to_numeric(df[cost_col].replace('[\$,]', '', regex=True), errors='coerce').fillna(0)
+
+            # UPC is required
+            df['UPC'] = df[selected_fields['upc_col']]
+
+            # Optional mappings if provided
+            if selected_fields['sku_col']:
+                df['SKU'] = df[selected_fields['sku_col']]
+
+            if selected_fields['title_col']:
+                df['Title'] = df[selected_fields['title_col']]
+
+            if selected_fields['cost_col']:
+                df['Cost'] = pd.to_numeric(df[selected_fields['cost_col']].replace('[\$,]', '', regex=True), errors='coerce').fillna(0)
+            else:
+                df['Cost'] = 0
+
             df['ActualPrice'] = df['Cost'] * (1 - discount_percentage / 100)
+
+            # Optional extra columns
+            optional_keys = ['optional_1', 'optional_2', 'optional_3']
+            col_names = {
+                "optional_name_1":"",
+                "optional_name_2":"",
+                "optional_name_3":"",
+            }
+            # Loop over the optional keys and update the col_names dictionary with the corresponding column names from selected_fields
+            for idx, opt in enumerate(optional_keys):
+                col_name = selected_fields.get(opt)
+
+                if col_name:
+                    col_names[f"optional_name_{idx + 1}"] = col_name
+                    df[col_name] = df[col_name]
+            
 
             cached_results = request.session.get('cached_results', {})
             new_cache = {}
             items = df.to_dict(orient='records')
+        
             results = []
 
             def worker(item):
@@ -251,7 +299,7 @@ def analyze(request):
                 if item_hash in cached_results:
                     return cached_results[item_hash]
                 else:
-                    result = process_item(item, platform)
+                    result = process_item(item, platform,col_names=col_names)
                     new_cache[item_hash] = result
                     return result
 
@@ -281,58 +329,70 @@ def analyze(request):
 
     return JsonResponse({'error': 'Invalid request'}, status=400)
 
-import json
 
+
+
+import json
+from django.http import JsonResponse
+from django.shortcuts import render
+from .models import RawCsv  # adjust import if needed
+
+import json
+from django.http import JsonResponse
+from django.shortcuts import render
+from .models import RawCsv  # adjust import if needed
+
+@csrf_exempt
 def getData(request):
     if request.method == "POST" and request.GET.get("name"):
         name = request.GET.get("name")
         platform = request.GET.get("platform")
-        # Fetch the instance corresponding to the 'name' from RawCsv model
         instance = RawCsv.objects.filter(name=name).last()
-        
+
         if platform == "Walmart":
             platform_data = instance.WalmartData if instance else None
         elif platform == "Ebay":
             platform_data = instance.EbayData if instance else None
         else:
             platform_data = None
-            
+
         if platform_data:
             try:
-                # Convert to Python objects first
                 if isinstance(platform_data, str):
-                    # Replace problematic values before parsing
-                    platform_data = platform_data.replace("'", '"')  # Replace all single quotes with double quotes
-                    platform_data = platform_data.replace('""', '""')  # Fix potential double quotes
-                
-                # Parse JSON
+                    platform_data = platform_data.replace("'", '"')  # Normalize JSON quotes
+
                 data = json.loads(platform_data) if isinstance(platform_data, str) else platform_data
-                
-                # Process data - remove problematic fields
+
                 if isinstance(data, list):
                     for item in data:
-                        # Convert empty string values to appropriate types
+                        # Ensure optional fields are always present
+                        item.setdefault("optional_1", "")
+                        item.setdefault("optional_2", "")
+                        item.setdefault("optional_3", "")
+
+                        # Clean up empty values
                         for key in list(item.keys()):
                             if item[key] == '' or item[key] == '""':
-                                # For numeric fields, use 0
-                                if key in ['Cost', 'ActualPrice', 'avg_sold_price', 'estimated_fees', 
-                                         'estimated_shipping', 'estimated_profit', 'profit_margin', 
-                                         'roi', 'monthly_volume']:
+                                if key in ['Cost', 'ActualPrice', 'avg_sold_price', 'estimated_fees',
+                                           'estimated_shipping', 'estimated_profit', 'profit_margin',
+                                           'roi', 'monthly_volume']:
                                     item[key] = 0
                                 else:
-                                    item[key] = ""  # Empty string for non-numeric fields
-                
+                                    item[key] = ""
+
                 return JsonResponse({"results": data})
             except json.JSONDecodeError:
                 return JsonResponse({"error": f"Invalid JSON format in {platform} data"}, status=400)
         else:
             return JsonResponse({"error": "Data not found for the provided name and platform."}, status=404)
-    
+
     if request.method == "GET":
         name = request.GET.get("name")
         instance = RawCsv.objects.filter(name=name).last()
 
     return render(request, 'analyze.html')
+
+
 
 # alanswim@aol.com
 

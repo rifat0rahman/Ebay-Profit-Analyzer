@@ -127,6 +127,9 @@
       vertical-align: middle;
       font-size: 0.95rem;
     }
+    td,th{
+        width: 100px;
+    }
 
     .spinner-border-sm {
       width: 1rem;
@@ -185,9 +188,9 @@
         <table class="table table-bordered table-hover align-middle">
           <thead>
             <tr>
-              <th>SKU</th>
+              <th v-show="originalResults[0].SKU">SKU</th>
               <th>UPC</th>
-              <th>Title</th>
+              <th v-show="originalResults[0].Title">Title</th>
               <th>
                 <span @click="sortByColumn('Cost')">
                   Cost
@@ -332,6 +335,9 @@
                   <input v-model="filterValues.monthly_volume" @input="debounceApplyFilters" class="form-control form-control-sm filter-value" placeholder="Value">
                 </div>
               </th>
+              <th v-show="originalResults[0].optional_1">{{originalResults[0].optional_1_name}}</th>
+              <th v-show="originalResults[0].optional_2">{{originalResults[0].optional_2_name}}</th>
+              <th v-show="originalResults[0].optional_3">{{originalResults[0].optional_3_name}}</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -342,9 +348,9 @@
                   'table-success': row.profit_margin > 30,
                   'table-warning': row.profit_margin <= 30 && row.estimated_profit >= 0
                 }">
-              <td>{{ row.SKU }}</td>
+              <td v-show="originalResults[0].SKU">{{ row.SKU }}</td>
               <td>{{ row.UPC }}</td>
-              <td>{{ row.Title.length > 40 ? row.Title.slice(0, 40) + '…' : row.Title }}</td>
+              <td v-show="originalResults[0].Title">{{ row.Title.length > 40 ? row.Title.slice(0, 40) + '…' : row.Title }}</td>
               <td>${{ row.Cost.toFixed(2) }}</td>
               <td>${{ row.ActualPrice.toFixed(2) }}</td>
               <td>${{ row.avg_sold_price.toFixed(2) }}</td>
@@ -354,6 +360,9 @@
               <td>{{ row.profit_margin.toFixed(2) }}%</td>
               <td>{{ row.roi.toFixed(2) }}%</td>
               <td>{{ row.monthly_volume }}</td>
+              <td v-show="originalResults[0].optional_1">{{ row.optional_1 }}</td>
+              <td v-show="originalResults[0].optional_2">{{ row.optional_2 }}</td>
+              <td v-show="originalResults[0].optional_3">{{ row.optional_2 }}</td>
               <td><a :href="row.ebay_link" class="btn btn-sm btn-outline-dark" target="_blank">eBay</a></td>
             </tr>
           </tbody>
@@ -417,13 +426,6 @@
             roi:'',
             monthly_volume: ''
           },
-          mapping: {
-            sku_col: { label: 'SKU Column', value: '' },
-            upc_col: { label: 'UPC/Barcode Column', value: '' },
-            cost_col: { label: 'Cost Column', value: '' },
-            dis_col: { label: 'Discount Column', value: '' },
-            title_col: { label: 'Product Title Column', value: '' },
-          }
         };
       },
       computed: {
@@ -543,34 +545,46 @@
           document.body.removeChild(link);
         },
         async getData() {
-          const urlParams = new URLSearchParams(window.location.search);
-          this.platform = urlParams.get('platform') || 'eBay';
-          try {
-            const response = await axios.post(`analyze?${urlParams}`, null, {
-              headers: { 'X-CSRFToken': this.getCSRFToken() }
-            });
-            
-            if (response.data && Array.isArray(response.data.results)) {
-              this.results = response.data.results;
-              this.results.forEach(item => {
-                ['Cost', 'ActualPrice', 'avg_sold_price', 'estimated_fees', 'estimated_shipping', 
-                'estimated_profit','profit_margin','roi','monthly_volume'].forEach(field => {
-                  if (item[field] !== undefined) {
-                    item[field] = parseFloat(item[field]);
-                  }
+            const urlParams = new URLSearchParams(window.location.search);
+            this.platform = urlParams.get('platform') || 'eBay';
+
+            try {
+                const response = await axios.post(`analyze?${urlParams}`, null, {
+                headers: { 'X-CSRFToken': this.getCSRFToken() }
                 });
-              });
-              
-              this.originalResults = JSON.parse(JSON.stringify(this.results));
-              this.filteredResults = JSON.parse(JSON.stringify(this.results));
-            } else {
-              this.error = 'Invalid data format returned from server';
+
+                if (response.data && Array.isArray(response.data.results)) {
+                this.results = response.data.results;
+                this.results.forEach(item => {
+                    // Parse numeric fields
+                    ['Cost', 'ActualPrice', 'avg_sold_price', 'estimated_fees', 'estimated_shipping', 
+                    'estimated_profit','profit_margin','roi','monthly_volume'].forEach(field => {
+                    if (item[field] !== undefined && item[field] !== '') {
+                        item[field] = parseFloat(item[field]);
+                    } else {
+                        item[field] = 0;
+                    }
+                    });
+
+                    // Ensure optional fields are present
+                    ['optional_1', 'optional_2', 'optional_3'].forEach(opt => {
+                    if (!(opt in item)) {
+                        item[opt] = "";
+                    }
+                    });
+                });
+
+                this.originalResults = JSON.parse(JSON.stringify(this.results));
+                this.filteredResults = JSON.parse(JSON.stringify(this.results));
+
+                } else {
+                this.error = 'Invalid data format returned from server';
+                }
+            } catch (err) {
+                this.error = 'There is no Data for this platform';
+                console.error("Failed to load data:", err);
             }
-          } catch (err) {
-            this.error = 'There is no Data for this platform';
-            console.error("Failed to load data:", err);
-          }
-        }
+            }
       },
       mounted() {
         this.getData();
