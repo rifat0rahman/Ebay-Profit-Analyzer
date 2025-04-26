@@ -235,7 +235,7 @@ def analyze(request):
 
     if request.method == 'POST' and request.POST.get('map_action') == 'map_columns':
         try:
-            # Collect selected columns from mapping
+          
             selected_fields = {
                 'sku_col': request.POST.get('sku_col', '').lower().strip(),
                 'upc_col': request.POST.get('upc_col', '').lower().strip(),
@@ -258,7 +258,7 @@ def analyze(request):
             # UPC is required
             df['UPC'] = df[selected_fields['upc_col']]
 
-            # Optional mappings if provided
+           
             if selected_fields['sku_col']:
                 df['SKU'] = df[selected_fields['sku_col']]
 
@@ -272,14 +272,14 @@ def analyze(request):
 
             df['ActualPrice'] = df['Cost'] * (1 - discount_percentage / 100)
 
-            # Optional extra columns
+           
             optional_keys = ['optional_1', 'optional_2', 'optional_3']
             col_names = {
                 "optional_name_1":"",
                 "optional_name_2":"",
                 "optional_name_3":"",
             }
-            # Loop over the optional keys and update the col_names dictionary with the corresponding column names from selected_fields
+         
             for idx, opt in enumerate(optional_keys):
                 col_name = selected_fields.get(opt)
 
@@ -331,16 +331,6 @@ def analyze(request):
 
 
 
-
-import json
-from django.http import JsonResponse
-from django.shortcuts import render
-from .models import RawCsv  # adjust import if needed
-
-import json
-from django.http import JsonResponse
-from django.shortcuts import render
-from .models import RawCsv  # adjust import if needed
 
 @csrf_exempt
 def getData(request):
