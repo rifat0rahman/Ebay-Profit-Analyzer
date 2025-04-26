@@ -5,14 +5,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-EBAY_CLIENT_ID = 'RifatRah-CsvAnaly-PRD-b0e716b3d-77f498e2'
-EBAY_CLIENT_SECRET = 'PRD-0e716b3d0fab-4101-434a-b3ab-34cb'
-# EBAY_CLIENT_ID = 'AlanWolk-CsvAnaly-PRD-b0e92398a-3feb6e69'
-# EBAY_CLIENT_SECRET = 'PRD-0e92398a3e24-80f8-4e8e-aa4c-c150'
-
-# EBAY_OAUTH_URL = 'https://api.sandbox.ebay.com/identity/v1/oauth2/token'
-# EBAY_SEARCH_URL = 'https://api.sandbox.ebay.com/buy/browse/v1/item_summary/search'
-# EBAY_SCOPE = 'https://api.ebay.com/oauth/api_scope'
 
 EBAY_OAUTH_URL = 'https://api.ebay.com/identity/v1/oauth2/token'
 EBAY_SEARCH_URL = 'https://api.ebay.com/buy/browse/v1/item_summary/search'
