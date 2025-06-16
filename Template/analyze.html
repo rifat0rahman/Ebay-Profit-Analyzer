@@ -363,7 +363,10 @@
               <td v-show="originalResults[0].optional_1">{{ row.optional_1 }}</td>
               <td v-show="originalResults[0].optional_2">{{ row.optional_2 }}</td>
               <td v-show="originalResults[0].optional_3">{{ row.optional_2 }}</td>
-              <td><a :href="row.ebay_link" class="btn btn-sm btn-outline-dark" target="_blank">eBay</a></td>
+              <td v-if="row.ebay_link"><a :href="row.ebay_link" class="btn btn-sm btn-outline-dark" target="_blank">{{platform}}</a></td>
+              <td v-if="row.walmart_link"><a :href="row.walmart_link" class="btn btn-sm btn-outline-dark" target="_blank">{{platform}}</a>
+              </td>
+
             </tr>
           </tbody>
         </table>

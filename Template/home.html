@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <title>CSV eBay Profit Analyzer</title>
@@ -11,90 +12,96 @@
     [v-cloak] {
       display: none;
     }
+
     body {
-    background-color: #f8f9fa;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  }
+      background-color: #f8f9fa;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
 
-  [v-cloak] {
-    display: none;
-  }
+    [v-cloak] {
+      display: none;
+    }
 
-  .card {
-    border-radius: 1rem;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
-  }
+    .card {
+      border-radius: 1rem;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    }
 
-  .form-label {
-    font-weight: 600;
-  }
+    .form-label {
+      font-weight: 600;
+    }
 
-  .form-control,
-  .form-select {
-    border-radius: 0.5rem;
-    transition: box-shadow 0.3s ease;
-  }
+    .form-control,
+    .form-select {
+      border-radius: 0.5rem;
+      transition: box-shadow 0.3s ease;
+    }
 
-  .form-control:focus,
-  .form-select:focus {
-    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
-  }
+    .form-control:focus,
+    .form-select:focus {
+      box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+    }
 
-  .btn {
-    border-radius: 0.5rem;
-    font-weight: 600;
-  }
+    .btn {
+      border-radius: 0.5rem;
+      font-weight: 600;
+    }
 
-  .btn-primary {
-    background-color: #019699;
-    border-color: #019699;
-  }
-  .btn-primary:hover {
-    background-color: #028083;
-    border-color: #019699;
-  }
+    .btn-primary {
+      background-color: #019699;
+      border-color: #019699;
+    }
 
-  .btn-warning {
-    background-color: #ed9b02;
-    border-color: #f59f00;
-    color: #fff;
-  }
-  .btn-warning:hover {
-    background-color: #d88d03;
-    border-color: #f59f00;
-    color: #fff;
-  }
+    .btn-primary:hover {
+      background-color: #028083;
+      border-color: #019699;
+    }
 
-  h1, h5 {
-    font-weight: 700;
-  }
+    .btn-warning {
+      background-color: #ed9b02;
+      border-color: #f59f00;
+      color: #fff;
+    }
 
-  table thead th {
-    vertical-align: middle;
-    background-color: #343a40;
-    color: white;
-    font-weight: 600;
-  }
+    .btn-warning:hover {
+      background-color: #d88d03;
+      border-color: #f59f00;
+      color: #fff;
+    }
 
-  tbody tr:hover {
-    background-color: #f1f1f1;
-  }
+    h1,
+    h5 {
+      font-weight: 700;
+    }
 
-  .table th, .table td {
-    vertical-align: middle;
-    font-size: 0.95rem;
-  }
+    table thead th {
+      vertical-align: middle;
+      background-color: #343a40;
+      color: white;
+      font-weight: 600;
+    }
 
-  .spinner-border-sm {
-    width: 1rem;
-    height: 1rem;
-  }
+    tbody tr:hover {
+      background-color: #f1f1f1;
+    }
 
-  .btn-group a {
-    margin: 0 5px;
-  }
+    .table th,
+    .table td {
+      vertical-align: middle;
+      font-size: 0.95rem;
+    }
+
+    .spinner-border-sm {
+      width: 1rem;
+      height: 1rem;
+    }
+
+    .btn-group a {
+      margin: 0 5px;
+    }
   </style>
 </head>
+
 <body>
   <div id="app" class="container mt-5" v-cloak>
     <h1 class="text-center mb-4">eBay Profit Analyzer</h1>
@@ -132,30 +139,35 @@
                 <option disabled value="">-- select column --</option>
                 <option v-for="col in columns" :value="col">{{ col }}</option>
               </select>
-              <input type="text" placeholder="Discount Price %" class="form-control" v-model="mapping[key].value" v-else required>
+              <input type="text" placeholder="Discount Price %" class="form-control" v-model="mapping[key].value" v-else
+                required>
             </div>
           </div>
-        
-          <div class="d-grid">
+          <!-- this is for ebay -->
+          <div class="">
             <div class="row text-center">
               <div class="col">
-                <button
-                  type="button"
-                  class="btn btn-primary me-2"
-                  @click.prevent="analyzeColumns('ebay')"
-                  :disabled="analyzing"
-                >
+                <button type="button" class="btn btn-primary" @click.prevent="analyzeColumns('ebay')"
+                  :disabled="analyzing">
                   Analyze with eBay Data
                 </button>
                 <br>
-                <div class="text-center">
-                  <span class="spinner-border spinner-border-sm ms-2" role="status" v-if="analyzing"></span>
-                </div>
+              </div>
+              <div class="col">
+                <button type="button" class="btn btn-warning" @click.prevent="analyzeColumns('walmart')"
+                  :disabled="analyzing">
+                  Analyze with Walmart Data
+                </button>
+                <br>
               </div>
             </div>
+            <div class="text-center">
+              <span class="spinner-border spinner-border-sm ms-2" role="status" v-if="analyzing"></span>
+            </div>
           </div>
+          <!-- this is for walmart -->
         </form>
-        
+
       </div>
     </div>
 
@@ -164,6 +176,7 @@
         <tr>
           <th>Name</th>
           <th>Ebay</th>
+          <th>Walmart</th>
         </tr>
       </thead>
       <tbody>
@@ -172,21 +185,26 @@
             <p>{{ name }}</p>
           </td>
           <td>
-            <a :href="'/analyze?name=' + encodeURIComponent(name) + '&platform=Ebay'" class="btn btn-primary btn-sm">Ebay</a>
-            <button @click.prevent="delete_data(name)"  class="ms-5 btn btn-danger btn-sm">Delete</button>
+            <a :href="'/analyze?name=' + encodeURIComponent(name) + '&platform=Ebay'"
+              class="btn btn-primary btn-sm">Ebay</a>
           </td>
           <td>
+            <a :href="'/analyze?name=' + encodeURIComponent(name) + '&platform=Walmart'"
+              class="btn btn-primary btn-sm">Walmart</a>
+          </td>
+          <td>
+            <button @click.prevent="delete_data(name)" class="ms-5 btn btn-danger btn-sm">Delete</button>
           </td>
         </tr>
       </tbody>
     </table>
-    
+
   </div>
   {% endverbatim %}
 
   <script>
     const { createApp } = Vue;
-    
+
     createApp({
       data() {
         return {
@@ -223,11 +241,11 @@
         },
         async uploadFile() {
           if (!this.file) return;
-    
+
           this.uploading = true;
           const formData = new FormData();
           formData.append('file', this.file);
-    
+
           try {
             const response = await axios.post('', formData, {
               headers: { 'X-CSRFToken': this.getCSRFToken() }
@@ -240,33 +258,68 @@
             this.uploading = false;
           }
         },
+        // here is the lookup
         async analyzeColumns(platform) {
-          this.analyzing = true;
-          const formData = new FormData();
-          formData.append('map_action', 'map_columns');
-          for (let key in this.mapping) {
-            console.log(key," : ",this.mapping[key].value);
-            formData.append(key, this.mapping[key].value);
-          }
+          if (platform == 'ebay') {
+            this.analyzing = true;
+            const formData = new FormData();
+            formData.append('map_action', 'map_columns');
+            for (let key in this.mapping) {
+              console.log(key, " : ", this.mapping[key].value);
+              formData.append(key, this.mapping[key].value);
+            }
 
 
-          // 👇 Append platform from button click
-          formData.append('platform', platform);
-    
-          try {
-            const response = await axios.post('', formData, {
-              headers: { 'X-CSRFToken': this.getCSRFToken() }
-            });
-            this.results = response.data.results || [];
-            console.log("result", this.results);
-            this.filteredResults = this.results;
-          } catch (err) {
-            alert('Error analyzing file');
-            console.error(err);
-          } finally {
-            this.analyzing = false;
+            // 👇 Append platform from button click
+            formData.append('platform', platform);
+
+            try {
+              const response = await axios.post('', formData, {
+                headers: { 'X-CSRFToken': this.getCSRFToken() }
+              });
+              this.results = response.data.results || [];
+              console.log("result", this.results);
+              this.filteredResults = this.results;
+            } catch (err) {
+              alert('Error analyzing file');
+              console.error(err);
+            } finally {
+              this.analyzing = false;
+            }
           }
+
+          else if (platform == 'walmart') {
+            this.analyzing = true;
+            const formData = new FormData();
+            formData.append('map_action', 'map_columns');
+            for (let key in this.mapping) {
+              console.log(key, " : ", this.mapping[key].value);
+              formData.append(key, this.mapping[key].value);
+            }
+
+
+            // 👇 Append platform from button click
+            formData.append('platform', platform);
+
+            try {
+              const response = await axios.post('/walmart', formData, {
+                headers: { 'X-CSRFToken': this.getCSRFToken() }
+              });
+              this.results = response.data.results || [];
+              console.log("result", this.results);
+              this.filteredResults = this.results;
+            } catch (err) {
+              alert('Error analyzing file');
+              console.error(err);
+            } finally {
+              this.analyzing = false;
+            }
+          }
+
         },
+
+
+
         getCSRFToken() {
           const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
           return cookie ? cookie.split('=')[1] : '';
@@ -277,15 +330,17 @@
               headers: { 'X-CSRFToken': this.getCSRFToken() }
             });
             this.results = response.data.results || [];
+            console.log("result", this.results);
           } catch (err) {
             console.error("Failed to load data:", err);
           }
         },
-       async delete_data(name){
+
+        async delete_data(name) {
           if (confirm('Are you sure you want to delete this item?')) {
             try {
               const response = await axios.get(`?delete=${name}`, {
-              headers: { 'X-CSRFToken': this.getCSRFToken() }
+                headers: { 'X-CSRFToken': this.getCSRFToken() }
               });
               this.results = response.data.results || [];
             } catch (err) {
@@ -299,9 +354,9 @@
         this.getData();
       }
     }).mount('#app');
-    </script>
-    
-    
+  </script>
+
+
 
 
 </body>
@@ -310,4 +365,5 @@
     background-color: #f8f9fa;
   }
 </style>
+
 </html>

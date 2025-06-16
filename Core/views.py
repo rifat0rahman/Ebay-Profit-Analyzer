@@ -14,6 +14,7 @@ EBAY_SEARCH_URL = 'https://api.ebay.com/buy/browse/v1/item_summary/search'
 EBAY_SCOPE = 'https://api.ebay.com/oauth/api_scope'
 EBAY_FEE_PERCENTAGE = 0.13
 DEFAULT_SHIPPING_COST = 5.0
+
 WALMART_FEE_PERCENTAGE = 0.13
 
 # Cache the token to avoid frequent requests
@@ -78,6 +79,102 @@ def get_ebay_avg_price(search_term, cost):
         logger.error(f"eBay fetch error for {search_term}: {e}")
         return 0.0, 0.0, 0.0, 0, '#'
 
+# walmart average price
+import time
+import uuid
+import base64
+walmart_token_cache = {'token': None, 'expires_at': 0}
+WALMART_CLIENT_ID = "73061262-0d5b-48f0-9655-59948cfe1b6b"
+WALMART_CLIENT_SECRET = "T6ZN8dKaO-7PmQNnmG48GBWS9LjhSfrtYKyzT9hZ1_pGNMM4Le8tH_XsiNzkgdqU-y42CEf1jO2T702HuLEyGw"
+encoded_credentials = base64.b64encode(f"{WALMART_CLIENT_ID}:{WALMART_CLIENT_SECRET}".encode()).decode()
+
+def get_walmart_token():
+    key = Key.objects.filter(Approved=True).first()
+
+    if walmart_token_cache['token'] and walmart_token_cache['expires_at'] > time.time():
+        return walmart_token_cache['token']
+    
+    token_url = "https://marketplace.walmartapis.com/v3/token"
+    
+    token_headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {encoded_credentials}",
+        "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
+        "WM_SVC.NAME": "Walmart Marketplace"
+    }
+    
+    data = "grant_type=client_credentials"
+    
+    response = requests.post(token_url, headers=token_headers, data=data)
+    response.raise_for_status()
+    result = response.json()
+    walmart_token_cache['token'] = result['access_token']
+    walmart_token_cache['expires_at'] = time.time() + result.get('expires_in', 3000)
+    return walmart_token_cache['token']
+
+
+def get_walmart_avg_price(search_term, cost):
+    try:
+        # Use token or API key
+        token = get_walmart_token()
+        headers = {
+            "accept": "application/json",
+            "WM_GLOBAL_VERSION": "3.1",
+            "WM_MARKET": "us",
+            "Authorization": f"Basic {encoded_credentials}",
+            "WM_SEC.ACCESS_TOKEN": token,
+            "WM_CONSUMER.ID": WALMART_CLIENT_ID,
+            "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
+            "WM_SVC.NAME": "Walmart Marketplace"
+        }
+
+        search_url = f"https://marketplace.walmartapis.com/v3/items/walmart/search?upc={search_term}"
+
+        response = requests.get(search_url, headers=headers)
+        response.raise_for_status()
+        items = response.json().get('items', [])
+
+        if not items:
+            return 0.0, 0.0, 0.0, 0, '#'
+
+        prices = []
+        shipping_prices = []
+        walmart_url = '#'
+
+        for item in items:
+            # Extract price
+            price_str = item.get('price', {}).get('amount')
+            price = float(price_str) if price_str else 0.0
+            prices.append(price)
+
+            # Shipping not available in this response — default to 0
+            shipping = 0.0
+            shipping_prices.append(shipping)
+
+            # Construct Walmart URL if not already set
+            if walmart_url == '#' and item.get('itemId'):
+                walmart_url = f"https://www.walmart.com/ip/{item['itemId']}"
+
+
+        avg_price = sum(prices) / len(prices) if prices else 0
+        avg_shipping = sum(shipping_prices) / len(shipping_prices) if shipping_prices else 0
+
+        estimated_profit = avg_price - avg_shipping - cost
+        roi = (estimated_profit / cost) * 100 if cost else 0.0
+
+        return (
+            avg_price,
+            avg_shipping,
+            roi,
+            len(items),
+            walmart_url
+        )
+
+    except Exception as e:
+        logger.error(f"Walmart fetch error for {search_term}: {e}")
+        return 0.0, 0.0, 0.0, 0, '#'
+
 
 
 def hash_item(item):
@@ -110,7 +207,7 @@ def process_item(item_data, platform="ebay",col_names=None):
         avg_price = avg_shipping = roi = volume = product_link = 0.0
 
         if platform == "walmart":
-            pass
+            avg_price, avg_shipping, roi, volume, product_link = get_walmart_avg_price(search_term, cost)
         else:
             avg_price, avg_shipping, roi, volume, product_link = get_ebay_avg_price(search_term, cost)
 
@@ -311,7 +408,15 @@ def analyze(request):
             for col in df.columns:
                 if df[col].dtype == 'object':
                     if any(price_indicator in col.lower() for price_indicator in ['retail', 'w/s', 'cost', 'cog']):
-                        df[col] = df[col].astype(str).str.replace('$', '').str.replace(',', '').str.strip()
+                        
+                        df[col] = (
+                            df[col]
+                            .astype(str)
+                            .str.replace(r'[^\d.,-]', '', regex=True)
+                            .str.replace(',', '', regex=False)
+                            .str.extract(r'(-?\d+(?:\.\d+)?)')
+                        )
+                        
                         try:
                             df[col] = pd.to_numeric(df[col], errors='coerce')
                         except:
@@ -364,7 +469,10 @@ def analyze(request):
                 df['Title'] = df[selected_fields['title_col']]
 
             if selected_fields['cost_col']:
-                df['Cost'] = pd.to_numeric(df[selected_fields['cost_col']].replace('[\$,]', '', regex=True), errors='coerce').fillna(0)
+                df['Cost'] = pd.to_numeric(
+                    df[selected_fields['cost_col']],
+                    errors='coerce'
+                ).fillna(0)
             else:
                 df['Cost'] = 0
 
@@ -443,6 +551,7 @@ def analyze(request):
 
     return JsonResponse({'error': 'Invalid request'}, status=400)
 
+
 @csrf_exempt
 def getData(request):
     if request.method == "POST" and request.GET.get("name"):
@@ -450,10 +559,14 @@ def getData(request):
         platform = request.GET.get("platform")
         instance = RawCsv.objects.filter(name=name).last()
 
-        if platform == "Walmart":
-            platform_data = instance.WalmartData if instance else None
-        elif platform == "Ebay":
-            platform_data = instance.EbayData if instance else None
+        # Retrieve the data based on the platform
+        if platform and instance:
+            if platform.lower() == "walmart":
+                platform_data = instance.WalmartData
+            elif platform.lower() == "ebay":
+                platform_data = instance.EbayData
+            else:
+                platform_data = None
         else:
             platform_data = None
 
@@ -465,64 +578,229 @@ def getData(request):
                 else:
                     data = platform_data
 
-                # Further clean the data if needed
+                # Clean and normalize data
                 if isinstance(data, list):
-                    # Remove any items that might cause issues
                     valid_items = []
                     for item in data:
                         try:
-                            # Ensure item is a valid dict
                             if not isinstance(item, dict):
                                 continue
-
-                            # Ensure optional fields are always present
+                            # Ensure optional fields
                             item.setdefault("optional_1", "")
                             item.setdefault("optional_2", "")
                             item.setdefault("optional_3", "")
-
                             # Clean up empty values and normalize types
                             for key in list(item.keys()):
                                 if item[key] == '' or item[key] == '""' or item[key] is None:
                                     if key in ['Cost', 'ActualPrice', 'avg_sold_price', 'estimated_fees',
-                                            'estimated_shipping', 'estimated_profit', 'profit_margin',
-                                            'roi', 'monthly_volume']:
+                                               'estimated_shipping', 'estimated_profit', 'profit_margin',
+                                               'roi', 'monthly_volume']:
                                         item[key] = 0
                                     else:
                                         item[key] = ""
-
-                            # Test if item is JSON serializable
-                            json.dumps(item)
+                            json.dumps(item)  # test JSON serializable
                             valid_items.append(item)
                         except Exception as e:
                             logger.warning(f"Skipping invalid item: {str(e)}")
                             continue
-
                     data = valid_items
-
                 return JsonResponse({"results": data})
             except json.JSONDecodeError as e:
                 logger.error(f"JSON decode error: {str(e)}")
-                # Try to fix common JSON format issues
                 try:
-                    # Replace problematic characters and try again
                     fixed_data = platform_data.replace("'", '"').replace("None", "null").replace("True", "true").replace("False", "false")
                     data = json.loads(fixed_data)
-
-                    # Further filter any problematic items
                     if isinstance(data, list):
                         data = [item for item in data if is_json_serializable(item)]
-
                     return JsonResponse({"results": data})
                 except Exception:
-                    return JsonResponse({"error": f"Invalid JSON format in {platform} data"}, status=400)
+                    return JsonResponse({"results": [], "error": f"Invalid JSON format in {platform} data"}, status=400)
         else:
-            return JsonResponse({"error": "Data not found for the provided name and platform."}, status=404)
+            # Always return empty results and error if not found
+            return JsonResponse({"results": [], "error": "Data not found for the provided name and platform."}, status=404)
 
+    # For GET requests, just render the page (frontend JS will fetch data via POST)
     if request.method == "GET":
-        name = request.GET.get("name")
-        instance = RawCsv.objects.filter(name=name).last()
-
+        return render(request, 'analyze.html')
     return render(request, 'analyze.html')
 
 
 
+# walmart analysis is here
+
+@csrf_exempt
+def walmart_analysis(request):
+    if request.method == 'POST' and request.FILES.get('file'):
+        try:
+            file = request.FILES['file']
+
+            try:
+                content = file.read().decode('utf-8')
+            except UnicodeDecodeError:
+                file.seek(0)
+                content = file.read().decode('latin-1')
+
+            lines = content.splitlines()
+            header_row = None
+            for i, line in enumerate(lines):
+                if 'UPC' in line:
+                    header_row = i
+                    break
+
+            if header_row is None:
+                return JsonResponse({'error': "Could not identify header row (UPC missing)", 'success': False}, status=400)
+
+            df = pd.read_csv(io.StringIO('\n'.join(lines[header_row:])))
+            df = df.dropna(how='all')
+            print("heloooo", df.head(10))
+            for col in df.columns:
+                if df[col].dtype == 'object':
+                    if any(price_indicator in col.lower() for price_indicator in ['retail', 'w/s', 'cost', 'cog']):
+                        print("BEFORE:", df[col].head(10))
+                        df[col] = (
+                            df[col]
+                            .astype(str)
+                            .str.replace(r'[^\d.,-]', '', regex=True)
+                            .str.replace(',', '', regex=False)
+                            .str.extract(r'(-?\d+(?:\.\d+)?)')
+                        )
+                        print("AFTER:", df[col].head(10))
+                        try:
+                            df[col] = pd.to_numeric(df[col], errors='coerce')
+                        except:
+                            pass
+                    else:
+                        df[col] = df[col].astype(str).str.strip()
+
+            df.columns = df.columns.str.strip().str.lower()
+
+            # Use pandas default JSON serialization but handle NaNs properly
+            request.session['raw_csv'] = df.replace({pd.NA: None}).to_json(orient='split', date_format='iso')
+            request.session['file_name'] = file.name
+            request.session['cached_results'] = {}
+
+            return JsonResponse({'columns': list(df.columns), 'success': True})
+        except Exception as e:
+            logger.error(f"File upload error: {traceback.format_exc()}")
+            return JsonResponse({'error': f"Error processing file: {str(e)}", 'success': False}, status=400)
+
+    if request.method == 'POST' and request.POST.get('map_action') == 'map_columns':
+        try:
+            # Collect selected columns from mapping
+           
+            selected_fields = {
+                'sku_col': request.POST.get('sku_col', '').lower().strip(),
+                'upc_col': request.POST.get('upc_col', '').lower().strip(),
+                'cost_col': request.POST.get('cost_col', '').lower().strip(),
+                'title_col': request.POST.get('title_col', '').lower().strip(),
+                'dis_col': request.POST.get('dis_col', '').strip(),  # discount %
+                'optional_1': request.POST.get('optional_1', '').lower().strip(),
+                'optional_2': request.POST.get('optional_2', '').lower().strip(),
+                'optional_3': request.POST.get('optional_3', '').lower().strip(),
+            }
+            platform = request.POST.get("platform", "walmart").lower().strip()
+            discount_percentage = float(selected_fields.get('dis_col') or 0)
+
+            raw_data = request.session.get('raw_csv')
+            if not raw_data:
+                return JsonResponse({'error': "Session expired. Please upload your file again.", 'success': False}, status=400)
+
+            df = pd.read_json(raw_data, orient='split')
+
+            # UPC is required
+            df['UPC'] = df[selected_fields['upc_col']]
+
+            # Optional mappings if provided
+            if selected_fields['sku_col']:
+                df['SKU'] = df[selected_fields['sku_col']]
+
+            if selected_fields['title_col']:
+                df['Title'] = df[selected_fields['title_col']]
+
+            
+            print(df[selected_fields['cost_col']])
+
+            if selected_fields['cost_col']:
+                # Extract the numeric value (integer or decimal) from the cost string
+                df['Cost'] = pd.to_numeric(
+                    df[selected_fields['cost_col']],
+                    errors='coerce'
+                ).fillna(0)
+            else:
+                df['Cost'] = 0
+
+
+            df['ActualPrice'] = df['Cost'] * (1 - discount_percentage / 100)
+
+            # Optional extra columns
+            optional_keys = ['optional_1', 'optional_2', 'optional_3']
+            col_names = {
+                "optional_name_1": "",
+                "optional_name_2": "",
+                "optional_name_3": "",
+            }
+            # Loop over the optional keys and update the col_names dictionary with the corresponding column names from selected_fields
+            for idx, opt in enumerate(optional_keys):
+                col_name = selected_fields.get(opt)
+
+                if col_name:
+                    col_names[f"optional_name_{idx + 1}"] = col_name
+                    df[col_name] = df[col_name]
+
+            cached_results = request.session.get('cached_results', {})
+            new_cache = {}
+            items = df.replace({pd.NA: None}).to_dict(orient='records')
+
+            results = []
+
+            def worker(item):
+                try:
+                    item_hash = hash_item(item)
+                    if item_hash in cached_results:
+                        time.sleep(0.3)
+                        return cached_results[item_hash]
+                    else:
+                        result = process_item(item, platform, col_names=col_names)
+                        new_cache[item_hash] = result
+                        time.sleep(0.3)
+                        return result
+                    
+                except Exception as e:
+                    logger.error(f"Error processing item: {str(e)}")
+                    return None  # Return None for failed items
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                worker_results = list(executor.map(worker, items))
+                # Filter out None results (failed items)
+                results = [r for r in worker_results if r is not None]
+
+            cached_results.update(new_cache)
+            request.session['cached_results'] = cached_results
+
+            # Clean results for JSON serialization
+            cleaned_results = [clean_json_data(item) for item in results]
+
+            # Filter out any items that still can't be serialized
+            serializable_results, _ = filter_non_serializable(cleaned_results)
+            request.session['analysis_results'] = serializable_results
+
+            # Sort results, handling None values
+            serializable_results.sort(
+                key=lambda x: x.get('profit_margin', 0) if x.get('profit_margin') is not None else 0,
+                reverse=True
+            )
+
+            instance = RawCsv.objects.filter(name=request.session.get('file_name')).last()
+            if not instance:
+                instance = RawCsv(name=request.session.get('file_name'))
+            
+            instance.WalmartData = safe_json_dumps(serializable_results, remove_bad_items=True)
+            instance.save()
+
+            csv_list = list(RawCsv.objects.order_by('-created_at').values_list('name', flat=True))
+            return JsonResponse({"results": csv_list})
+        except Exception as e:
+            logger.error(f"Analysis error: {traceback.format_exc()}")
+            return JsonResponse({'error': f"Analysis error: {str(e)}", 'success': False}, status=400)
+
+    return JsonResponse({'error': 'Invalid request'}, status=400)
