@@ -94,7 +94,7 @@
         max-width:100%; /* Change from 1700px to 100% for wider table */
         margin: auto;
     }
-    
+
     .table-responsive {
         max-height: 100%;
         overflow-y: auto;
@@ -114,11 +114,11 @@
         font-size: 15px;
         color: white;
     }
-    
+
     .table thead th {
         box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15);
     }
-    
+
     tbody tr:hover {
       background-color: #f1f1f1;
     }
@@ -139,11 +139,11 @@
     .btn-group a {
       margin: 0 5px;
     }
-    
+
     .table-striped tbody tr:nth-of-type(odd) {
       background-color: #f8f9fa;
     }
-    
+
     .sort-icon {
       margin-left: 5px;
     }
@@ -368,7 +368,7 @@
           </tbody>
         </table>
         <div class="text-center mt-3">
-            <button class="btn btn-outline-secondary btn-sm" @click="showMoreRows" v-if="visibleRows < filteredResults.length">
+            <button class="btn btn-outline-secondary btn-sm me-2" @click="showMoreRows" v-if="visibleRows < filteredResults.length">
                Show More ({{ filteredResults.length - visibleRows }} remaining)
             </button>
             <button class="btn btn-outline-danger btn-sm" @click="resetRows" v-if="visibleRows > 50">
@@ -454,13 +454,13 @@
           this.filteredResults = this.originalResults.filter(row => {
             return Object.keys(this.filterValues).every(key => {
               if (!this.filterValues[key]) return true;
-              
+
               const value = parseFloat(this.filterValues[key]);
               const actual = row[key];
               const operator = this.filterOperators[key];
-              
+
               if (isNaN(value)) return true;
-              
+
               switch (operator) {
                 case '>': return actual > value;
                 case '<': return actual < value;
@@ -471,7 +471,7 @@
               }
             });
           });
-          
+
           // re-apply sort if exists
           if (this.sortKey) {
             this.sortByColumn(this.sortKey, true);
@@ -486,9 +486,9 @@
               this.sortOrder = 'asc';
             }
           }
-          
+
           const modifier = this.sortOrder === 'desc' ? -1 : 1;
-          
+
           // Create a new array to avoid mutation issues
           this.filteredResults = [...this.filteredResults].sort((a, b) => {
             if (typeof a[key] === 'number') {
@@ -503,38 +503,38 @@
             alert('No results to download');
             return;
           }
-          
+
           // Get headers from the first object
           const headers = Object.keys(this.filteredResults[0]);
-          
+
           // Create CSV content
           let csvContent = headers.join(',') + '\n';
-          
+
           // Add data rows
           this.filteredResults.forEach(row => {
             const values = headers.map(header => {
               let cellValue = row[header];
-              
+
               // Format numbers to 2 decimal places if they're numeric
               if (typeof cellValue === 'number' && !Number.isInteger(cellValue)) {
                 cellValue = cellValue.toFixed(2);
               }
-              
+
               // Handle strings with commas by wrapping in quotes
               if (typeof cellValue === 'string' && cellValue.includes(',')) {
                 return `"${cellValue}"`;
               }
-              
+
               return cellValue;
             });
-            
+
             csvContent += values.join(',') + '\n';
           });
-          
+
           // Create a blob with the CSV content
           const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
           const url = URL.createObjectURL(blob);
-          
+
           // Create download link and trigger download
           const link = document.createElement('a');
           link.setAttribute('href', url);
@@ -557,7 +557,7 @@
                 this.results = response.data.results;
                 this.results.forEach(item => {
                     // Parse numeric fields
-                    ['Cost', 'ActualPrice', 'avg_sold_price', 'estimated_fees', 'estimated_shipping', 
+                    ['Cost', 'ActualPrice', 'avg_sold_price', 'estimated_fees', 'estimated_shipping',
                     'estimated_profit','profit_margin','roi','monthly_volume'].forEach(field => {
                     if (item[field] !== undefined && item[field] !== '') {
                         item[field] = parseFloat(item[field]);
